@@ -51,7 +51,7 @@ pipeline {
         stage('Expose IP') {
             steps {
                 script {
-                    def ip = sh(script: "hostname -I | awk '{print $1}'", returnStdout: true).trim()
+                    def ip = sh(script: "hostname -I | awk '{print \$1}'", returnStdout: true).trim()
                     echo "Application is available at: http://${ip}:8080"
                 }
             }
