@@ -31,7 +31,7 @@ pipeline {
                         docker rm -f nginx-test || true
 
                         echo "Running container for test..."
-                        docker run -d -p 8080:80 --name nginx-test ${IMAGE_NAME}:${IMAGE_TAG}
+                        docker run -d -p 8888:80 --name nginx-test ${IMAGE_NAME}:${IMAGE_TAG}
                     '''
                 }
             }
