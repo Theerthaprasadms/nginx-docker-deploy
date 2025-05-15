@@ -71,12 +71,3 @@ pipeline {
             }
         }
     }
-
-    post {
-        always {
-            echo "Cleaning up test container..."
-            sh 'docker rm -f nginx-test || true'
-        }
-    }
-}
-
