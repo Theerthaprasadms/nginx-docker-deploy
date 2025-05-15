@@ -23,19 +23,31 @@ pipeline {
             }
         }
 
-        stage('Test') {
+       stage('Test') {
             steps {
                 script {
-                    sh '''
-                        echo "Cleaning up existing container (if any)..."
-                        docker rm -f nginx-test || true
+                    echo 'Cleaning up existing container (if any)...'
+                    sh 'docker rm -f nginx-test || true'
 
-                        echo "Running container for test..."
-                        docker run -d -p 8888:80 --name nginx-test ${IMAGE_NAME}:${IMAGE_TAG}
+                    echo 'Running container for test...'
+                    sh 'docker run -d -p 8888:80 --name nginx-test nginx-custom:${ENVIRONMENT}'
+
+                    echo 'Performing health check...'
+                    sh '''
+                        sleep 5
+                        STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8888)
+                        echo "Health Check HTTP Status: $STATUS"
+                        if [ "$STATUS" -ne 200 ]; then
+                            echo "Health check failed!"
+                            exit 1
+                        else
+                            echo "Health check passed!"
+                        fi
                     '''
                 }
             }
         }
+
 
         stage('Push to Registry') {
             when {
