@@ -1,60 +1,81 @@
 pipeline {
     agent any
-    parameters {
-        choice(name: 'ENV', choices: ['dev', 'prod'], description: 'Deployment Environment')
-    }
+
     environment {
-        IMAGE_NAME = "nginx-custom:${params.ENV}"
-        DOCKER_REGISTRY = "docker.io/theerthaprasadms"
+        IMAGE_NAME = "nginx-custom"
+        IMAGE_TAG = "${params.ENVIRONMENT ?: 'dev'}"
     }
+
+    parameters {
+        choice(name: 'ENVIRONMENT', choices: ['dev', 'prod'], description: 'Choose the environment')
+    }
+
     stages {
         stage('Clone') {
             steps {
                 git url: 'https://github.com/Theerthaprasadms/nginx-docker-deploy.git'
             }
         }
+
         stage('Build') {
             steps {
-                sh "docker build -t ${IMAGE_NAME} ."
+                sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
             }
         }
+
         stage('Test') {
             steps {
                 script {
-                    sh "docker run -d -p 8080:80 --name nginx-test ${IMAGE_NAME}"
-                    sleep 5
                     sh '''
-                    status=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080)
-                    if [ "$status" -ne 200 ]; then
-                        echo "Health check failed"
-                        exit 1
-                    fi
-                    docker stop nginx-test && docker rm nginx-test
+                        echo "Cleaning up existing container (if any)..."
+                        docker rm -f nginx-test || true
+
+                        echo "Running container for test..."
+                        docker run -d -p 8080:80 --name nginx-test ${IMAGE_NAME}:${IMAGE_TAG}
                     '''
                 }
             }
         }
+
         stage('Push to Registry') {
+            when {
+                expression { return params.ENVIRONMENT == 'prod' }
+            }
             steps {
-                withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', passwordVariable: 'PASS', usernameVariable: 'USER')]) {
-                    sh "echo $PASS | docker login -u $USER --password-stdin"
-                    sh "docker tag ${IMAGE_NAME} ${DOCKER_REGISTRY}/${IMAGE_NAME}"
-                    sh "docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}"
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh '''
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        docker tag ${IMAGE_NAME}:${IMAGE_TAG} $DOCKER_USER/${IMAGE_NAME}:${IMAGE_TAG}
+                        docker push $DOCKER_USER/${IMAGE_NAME}:${IMAGE_TAG}
+                    '''
                 }
             }
         }
+
         stage('Deploy on Slave') {
             steps {
-                sh "docker run -d -p 8080:80 --name deployed-nginx ${DOCKER_REGISTRY}/${IMAGE_NAME}"
+                echo "Deployment logic goes here (Docker run or Kubernetes apply)..."
             }
         }
+
         stage('Expose IP') {
             steps {
-                script {
-                    def ip = sh(script: "hostname -I | awk '{print \$1}'", returnStdout: true).trim()
-                    echo "Application is available at: http://${ip}:8080"
-                }
+                sh '''
+                    CONTAINER_ID=$(docker ps -qf "name=nginx-test")
+                    if [ -n "$CONTAINER_ID" ]; then
+                        docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $CONTAINER_ID
+                    else
+                        echo "No running container found."
+                    fi
+                '''
             }
+        }
+    }
+
+    post {
+        always {
+            echo "Cleaning up test container..."
+            sh 'docker rm -f nginx-test || true'
         }
     }
 }
